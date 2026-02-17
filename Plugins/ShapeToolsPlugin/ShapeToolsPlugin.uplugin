@@ -2,7 +2,7 @@
 	"FileVersion": 3,
 	"Version": 1,
 	"VersionName": "1.0",
-	"FriendlyName": "ShapeToolsPlugin",
+	"FriendlyName": "ShapeTools",
 	"Description": "A complete plugin that allows you to create widget with custom clickable shapes and an AssetEditor to custom your UI shapes. 100% Blueprint-Friendly",
 	"Category": "Other",
 	"CreatedBy": "Rykaon",
@@ -16,8 +16,13 @@
 	"Installed": false,
 	"Modules": [
 		{
-			"Name": "ShapeToolsPlugin",
+			"Name": "ShapeToolsRuntime",
 			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "ShapeToolsEditor",
+			"Type": "Editor",
 			"LoadingPhase": "Default"
 		}
 	]

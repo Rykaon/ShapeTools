@@ -37,12 +37,15 @@ public class ShapeToolsEditor : ModuleRules
                 "Core",
 				"CoreUObject",
 				"Engine",
-				"UnrealEd",
+                "UnrealEd",
+                "UnrealEd",
 				"Slate",
 				"SlateCore",
 				"UMG",
-				"EditorStyle",
-				"Projects"
+                "PropertyEditor",
+                "EditorStyle",
+				"Projects",
+                "ShapeToolsRuntime"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

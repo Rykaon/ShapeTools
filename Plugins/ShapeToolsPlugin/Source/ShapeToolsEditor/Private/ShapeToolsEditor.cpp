@@ -6,13 +6,31 @@
 
 void FShapeToolsEditorModule::StartupModule()
 {
-	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
+	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+
+	ShapeToolsAssetCategory = AssetTools.RegisterAdvancedAssetCategory(
+		FName("ShapeTools"),
+		NSLOCTEXT("ShapeTools", "ShapeToolsCategory", "Shape Tools")
+	);
+
+	TSharedRef<IAssetTypeActions> Action = MakeShared<FAssetTypeActions_ShapeGraphAsset>(ShapeToolsAssetCategory);
+	AssetTools.RegisterAssetTypeActions(Action);
+	RegisteredAssetTypeActions.Add(Action);
 }
 
 void FShapeToolsEditorModule::ShutdownModule()
 {
-	// This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
-	// we call this function before unloading the module.
+	if (FModuleManager::Get().IsModuleLoaded("AssetTools"))
+	{
+		IAssetTools& AssetTools = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools").Get();
+
+		for (const TSharedRef<IAssetTypeActions>& Action : RegisteredAssetTypeActions)
+		{
+			AssetTools.UnregisterAssetTypeActions(Action);
+		}
+	}
+
+	RegisteredAssetTypeActions.Empty();
 }
 
 #undef LOCTEXT_NAMESPACE

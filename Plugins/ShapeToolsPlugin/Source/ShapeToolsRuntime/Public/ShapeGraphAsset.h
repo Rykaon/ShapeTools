@@ -10,6 +10,8 @@ class SHAPETOOLSRUNTIME_API UShapeGraphAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	UShapeGraphAsset();
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shape")
 	FName Key = NAME_None;
 

@@ -45,6 +45,7 @@ public class ShapeToolsEditor : ModuleRules
                 "PropertyEditor",
                 "EditorStyle",
 				"Projects",
+                "InputCore",
                 "ShapeToolsRuntime"
 				// ... add private dependencies that you statically link with here ...	
 			}

@@ -16,6 +16,8 @@ void FShapeToolsEditorModule::StartupModule()
 	TSharedRef<IAssetTypeActions> Action = MakeShared<FAssetTypeActions_ShapeGraphAsset>(ShapeToolsAssetCategory);
 	AssetTools.RegisterAssetTypeActions(Action);
 	RegisteredAssetTypeActions.Add(Action);
+
+	FShapeToolsEditorStyle::Initialize();
 }
 
 void FShapeToolsEditorModule::ShutdownModule()
@@ -31,6 +33,8 @@ void FShapeToolsEditorModule::ShutdownModule()
 	}
 
 	RegisteredAssetTypeActions.Empty();
+
+	FShapeToolsEditorStyle::Shutdown();
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -16,7 +16,7 @@ FShapeGraphEditorCommands::FShapeGraphEditorCommands()
 void FShapeGraphEditorCommands::RegisterCommands()
 {
 	// Blender-like defaults (tweak later)
-	UI_COMMAND(FrameView, "Frame", "Frame view / reset view", EUserInterfaceActionType::Button, FInputChord(EKeys::F));
+	UI_COMMAND(FrameView, "Frame", "Frame view / reset view", EUserInterfaceActionType::Button, FInputChord(EKeys::A));
 	UI_COMMAND(ToggleBackgroundLock, "Lock Background", "Toggle background pan/zoom lock", EUserInterfaceActionType::ToggleButton, FInputChord(EKeys::L));
 	UI_COMMAND(ResetBackground, "Reset Background", "Reset background offset/scale", EUserInterfaceActionType::Button, FInputChord(EKeys::R));
 

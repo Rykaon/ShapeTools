@@ -3,6 +3,7 @@
 #include "ShapeGraphAsset.h"
 #include "SShapeGraphEditorCanvas.h"
 #include "ShapeGraphEditorCommands.h"
+#include "ShapeToolsEditorStyle.h"
 
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
@@ -14,9 +15,16 @@
 #include "Framework/Commands/UICommandList.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Styling/AppStyle.h"
-#include "Widgets/Input/SComboButton.h"
-#include "Widgets/Text/STextBlock.h"
+#include "Widgets/SBoxPanel.h"
 #include "Widgets/Images/SImage.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SSpinBox.h"
+#include "Widgets/Input/SNumericEntryBox.h"
+#include "Widgets/Input/SComboButton.h"
+#include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/SBoxPanel.h"
 
 #include "Editor.h"
 #include "ScopedTransaction.h"
@@ -301,24 +309,243 @@ void FShapeGraphAssetEditorToolkit::ExtendToolbar()
 
 				ToolbarBuilder.BeginSection("ShapeTools");
 				{
-					ToolbarBuilder.AddToolBarButton(Cmds.FrameView);
-					ToolbarBuilder.AddToolBarButton(Cmds.ToggleClosed);
+					auto GetGridLabel = [this]() -> FText
+						{
+							const UShapeGraphAsset* A = EditingAsset.Get();
+							if (!A) return FText::FromString(TEXT("Grid"));
+
+							return (A->GridSpace == EShapeGridSpace::Design)
+								? FText::FromString(TEXT("PX"))
+								: FText::FromString(TEXT("UV"));
+						};
+
+					auto GetGridTooltip = [this]() -> FText
+						{
+							const UShapeGraphAsset* A = EditingAsset.Get();
+							if (!A) return FText::FromString(TEXT("Toggle grid space"));
+
+							const float Step = (A->GridSpace == EShapeGridSpace::Design) ? A->GridStepDesignPx : A->GridStepUV;
+
+							return (A->GridSpace == EShapeGridSpace::Design)
+								? FText::Format(NSLOCTEXT("ShapeTools", "GridTooltipPX", "Grid space: PX\nStep: {0} px\nClick to switch to UV"),
+									FText::AsNumber((int32)Step))
+								: FText::Format(NSLOCTEXT("ShapeTools", "GridTooltipUV", "Grid space: UV\nStep: {0}\nClick to switch to PX"),
+									FText::AsNumber(Step));
+						};
+
+					ToolbarBuilder.AddWidget(
+						SNew(SButton)
+						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						.ContentPadding(FMargin(6, 2))
+						.ToolTipText_Lambda(GetGridTooltip)
+						.OnClicked_Lambda([this]()
+							{
+								if (UShapeGraphAsset* A = EditingAsset.Get())
+								{
+									const FScopedTransaction Tx(NSLOCTEXT("ShapeTools", "ToggleGridSpaceTx", "Toggle Grid Space"));
+									A->Modify();
+
+									A->GridSpace = (A->GridSpace == EShapeGridSpace::Design) ? EShapeGridSpace::UV : EShapeGridSpace::Design;
+
+									A->PostEditChange();
+									A->MarkPackageDirty();
+
+									if (CanvasWidget.IsValid())
+									{
+										CanvasWidget->Invalidate(EInvalidateWidget::Paint);
+									}
+								}
+								return FReply::Handled();
+							})
+						[
+							SNew(SHorizontalBox)
+
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								[
+									// Icône "grid" (si elle n'existe pas dans ton build, elle s'affichera vide sans casser)
+									SNew(SImage)
+										.Image(FShapeToolsEditorStyle::Get().GetBrush("ShapeTools.Icons.Grid"))
+								]
+
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								.Padding(6, 0, 0, 0)
+								[
+									SNew(STextBlock)
+										.Text_Lambda(GetGridLabel) // affiche PX / UV
+								]
+						]
+					);
+
+					auto GetStepTooltip = [this]() -> FText
+						{
+							const UShapeGraphAsset* A = EditingAsset.Get();
+							if (!A) return FText::FromString(TEXT("Grid step"));
+
+							const float Step = (A->GridSpace == EShapeGridSpace::Design) ? A->GridStepDesignPx : A->GridStepUV;
+
+							return (A->GridSpace == EShapeGridSpace::Design)
+								? FText::Format(NSLOCTEXT("ShapeTools", "StepTooltipPX", "Grid step: {0} px\nOpen presets/custom"),
+									FText::AsNumber((int32)Step))
+								: FText::Format(NSLOCTEXT("ShapeTools", "StepTooltipUV", "Grid step: {0}\nOpen presets/custom"),
+									FText::AsNumber(Step));
+						};
+
+					ToolbarBuilder.AddWidget(
+						SNew(SComboButton)
+						.ComboButtonStyle(FAppStyle::Get(), "SimpleComboButton")
+						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						.HasDownArrow(true)
+						.ContentPadding(FMargin(6, 2))
+						.ToolTipText_Lambda(GetStepTooltip)
+						.ButtonContent()
+						[
+							SNew(SHorizontalBox)
+
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								[
+									// Icône "menu/options"
+									SNew(SImage)
+										.Image(FAppStyle::GetBrush("Icons.Settings"))
+								]
+
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								.Padding(6, 0, 0, 0)
+								[
+									SNew(STextBlock)
+										.Text_Lambda([this]()
+											{
+												const UShapeGraphAsset* A = EditingAsset.Get();
+												if (!A) return FText::FromString(TEXT("Step"));
+
+												const float Step = (A->GridSpace == EShapeGridSpace::Design) ? A->GridStepDesignPx : A->GridStepUV;
+												return (A->GridSpace == EShapeGridSpace::Design)
+													? FText::Format(NSLOCTEXT("ShapeTools", "StepLabelPX", "{0}px"), FText::AsNumber((int32)Step))
+													: FText::Format(NSLOCTEXT("ShapeTools", "StepLabelUV", "{0}"), FText::AsNumber(Step));
+											})
+								]
+						]
+						.OnGetMenuContent_Lambda([this]()
+							{
+								FMenuBuilder Menu(true, nullptr);
+
+								auto ApplyStep = [this](float NewStep)
+									{
+										if (UShapeGraphAsset* A = EditingAsset.Get())
+										{
+											const FScopedTransaction Tx(NSLOCTEXT("ShapeTools", "GridStepTx", "Change Grid Step"));
+											A->Modify();
+
+											if (A->GridSpace == EShapeGridSpace::Design)
+											{
+												A->GridStepDesignPx = FMath::Max(NewStep, 1.f);
+											}
+											else
+											{
+												A->GridStepUV = FMath::Clamp(NewStep, 0.0001f, 1.f);
+											}
+
+											A->PostEditChange();
+											A->MarkPackageDirty();
+
+											if (CanvasWidget.IsValid())
+											{
+												CanvasWidget->Invalidate(EInvalidateWidget::Paint);
+											}
+										}
+									};
+
+								Menu.BeginSection("GridStepPresets", NSLOCTEXT("ShapeTools", "GridStepPresets", "Presets"));
+								{
+									const UShapeGraphAsset* A = EditingAsset.Get();
+									const bool bPX = A && (A->GridSpace == EShapeGridSpace::Design);
+
+									const TArray<float> PresetsPX = { 1.f, 5.f, 10.f, 25.f, 50.f, 100.f };
+									const TArray<float> PresetsUV = { 0.001f, 0.005f, 0.01f, 0.02f, 0.05f };
+									const TArray<float>& Presets = bPX ? PresetsPX : PresetsUV;
+
+									for (float P : Presets)
+									{
+										Menu.AddMenuEntry(
+											bPX
+											? FText::Format(NSLOCTEXT("ShapeTools", "PresetPX", "{0} px"), FText::AsNumber((int32)P))
+											: FText::AsNumber(P),
+											FText(),
+											FSlateIcon(),
+											FUIAction(FExecuteAction::CreateLambda([ApplyStep, P]() { ApplyStep(P); }))
+										);
+									}
+								}
+								Menu.EndSection();
+
+								Menu.BeginSection("GridStepCustom", NSLOCTEXT("ShapeTools", "GridStepCustom", "Custom"));
+								{
+									Menu.AddWidget(
+										SNew(SNumericEntryBox<float>)
+										.MinValue(0.0001f)
+										.MaxValue(100000.f)
+										.Value_Lambda([this]() -> TOptional<float>
+											{
+												const UShapeGraphAsset* A = EditingAsset.Get();
+												if (!A) return TOptional<float>();
+
+												return (A->GridSpace == EShapeGridSpace::Design) ? A->GridStepDesignPx : A->GridStepUV;
+											})
+										.OnValueCommitted_Lambda([ApplyStep](float NewValue, ETextCommit::Type)
+											{
+												ApplyStep(NewValue);
+											}),
+										NSLOCTEXT("ShapeTools", "StepEntry", "Step")
+									);
+								}
+								Menu.EndSection();
+
+								return Menu.MakeWidget();
+							})
+					);
 
 					ToolbarBuilder.AddSeparator();
 
 					ToolbarBuilder.AddWidget(
 						SNew(SComboButton)
+						.ComboButtonStyle(FAppStyle::Get(), "SimpleComboButton")
+						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						.HasDownArrow(true)
+						.ContentPadding(FMargin(6, 2))
 						.ToolTipText(NSLOCTEXT("ShapeTools", "ShortcutsTooltip", "Show shortcuts"))
-						.HasDownArrow(false)
 						.ButtonContent()
 						[
-							SNew(SImage)
-								.Image(FAppStyle::Get().GetBrush("Icons.Menu"))
+							SNew(SHorizontalBox)
+
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								[
+									SNew(SImage)
+										.Image(FShapeToolsEditorStyle::Get().GetBrush("ShapeTools.Icons.Shortcuts"))
+								]
+
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								.Padding(6, 0, 0, 0)
+								[
+									// Optionnel : petit label comme tes autres boutons
+									SNew(STextBlock)
+										.Text(FText::FromString(TEXT("Keys")))
+								]
 						]
-						.MenuContent()
-						[
-							BuildShortcutsMenuWidget()
-						]
+						.OnGetMenuContent_Lambda([this]()
+							{
+								return BuildShortcutsMenuWidget();
+							})
 					);
 				}
 				ToolbarBuilder.EndSection();
@@ -353,7 +580,10 @@ void FShapeGraphAssetEditorToolkit::Command_Delete()
 
 void FShapeGraphAssetEditorToolkit::Command_Frame()
 {
-	// TODO: later, frame background/viewport. For now we can no-op.
+	if (CanvasWidget.IsValid())
+	{
+		CanvasWidget->FrameViewToShape();
+	}
 }
 
 void FShapeGraphAssetEditorToolkit::Command_ToggleClosed()
@@ -376,6 +606,15 @@ void FShapeGraphAssetEditorToolkit::Command_ToggleBgLock()
 	EditingAsset->bBackgroundLocked = !EditingAsset->bBackgroundLocked;
 	EditingAsset->PostEditChange();
 	EditingAsset->MarkPackageDirty();
+
+	if (EditingAsset->bBackgroundLocked)
+	{
+		if (CanvasWidget.IsValid())
+		{
+			CanvasWidget->ClearBackgroundSelection();
+			CanvasWidget->Invalidate(EInvalidateWidget::Paint);
+		}
+	}
 }
 
 void FShapeGraphAssetEditorToolkit::Command_ResetBg()

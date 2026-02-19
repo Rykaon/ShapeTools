@@ -4,11 +4,20 @@
 #include "Engine/DataAsset.h"
 #include "ShapeGraphAsset.generated.h"
 
+class SShapeGraphEditorCanvas;
+
 UENUM()
 enum class EShapeGridSpace : uint8
 {
 	Design,
 	UV
+};
+
+UENUM(BlueprintType)
+enum class EShapePivotMode : uint8
+{
+	MedianPoint UMETA(DisplayName = "Median Point"),
+	BoundingBoxCenter UMETA(DisplayName = "Bounding Box Center")
 };
 
 UCLASS(BlueprintType)
@@ -42,6 +51,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Editor|Canvas", meta = (ClampMin = "0.0001", ClampMax = "1.0", UIMin = "0.001", UIMax = "0.25"))
 	float GridStepUV = 0.01f;
+
+	UPROPERTY(EditAnywhere, Category = "ShapeTools|Pivot")
+	EShapePivotMode PivotMode = EShapePivotMode::MedianPoint;
 
 	UPROPERTY(EditAnywhere, Category = "Editor|Background")
 	TSoftObjectPtr<UTexture2D> BackgroundTexture;

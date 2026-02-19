@@ -26,6 +26,7 @@ void FShapeToolsEditorStyle::Initialize()
 
 	// Register icon brushes
 	StyleInstance->Set("ShapeTools.Icons.Grid", new IMAGE_BRUSH(TEXT("T_GridIcon.png"), FVector2D(16.f, 16.f)));
+	StyleInstance->Set("ShapeTools.Icons.Pivot", new IMAGE_BRUSH(TEXT("T_PivotIcon.png"), FVector2D(16.f, 16.f)));
 	StyleInstance->Set("ShapeTools.Icons.Shortcuts", new IMAGE_BRUSH(TEXT("T_ShortcutsIcon.png"), FVector2D(16.f, 16.f)));
 	StyleInstance->Set("ShapeTools.Icons.Export", new IMAGE_BRUSH(TEXT("T_ExportIcon.png"), FVector2D(16.f, 16.f)));
 

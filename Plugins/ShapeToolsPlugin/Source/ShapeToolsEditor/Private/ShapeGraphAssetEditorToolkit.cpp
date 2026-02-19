@@ -29,6 +29,8 @@
 #include "Editor.h"
 #include "ScopedTransaction.h"
 
+struct FPropertyChangedEvent;
+
 const FName FShapeGraphAssetEditorToolkit::TabId_Canvas(TEXT("ShapeGraph_Canvas"));
 const FName FShapeGraphAssetEditorToolkit::TabId_Details(TEXT("ShapeGraph_Details"));
 
@@ -62,6 +64,27 @@ void FShapeGraphAssetEditorToolkit::InitEditor(UShapeGraphAsset* InAsset)
 	// Canvas
 	CanvasWidget = SNew(SShapeGraphEditorCanvas)
 		.ShapeAsset(EditingAsset);
+
+	FPropertyEditorModule& PropertyEditorModule =
+		FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+
+	FDetailsViewArgs Args;
+	Args.bHideSelectionTip = true;
+	Args.bLockable = false;
+	Args.bUpdatesFromSelection = false;
+	Args.NotifyHook = nullptr;
+
+	DetailsView = PropertyEditorModule.CreateDetailView(Args);
+	DetailsView->SetObject(InAsset);
+
+	// Bind changement de propriété (dans Details)
+	if (!DetailsChangedHandle.IsValid())
+	{
+		DetailsChangedHandle = DetailsView->OnFinishedChangingProperties().AddRaw(
+			this,
+			&FShapeGraphAssetEditorToolkit::OnDetailsFinishedChangingProperties
+		);
+	}
 
 	// Commands
 	BindCommands();
@@ -104,6 +127,49 @@ void FShapeGraphAssetEditorToolkit::InitEditor(UShapeGraphAsset* InAsset)
 
 	ExtendToolbar();
 	RegenerateMenusAndToolbars();
+}
+
+void FShapeGraphAssetEditorToolkit::OnClose()
+{
+	if (DetailsView.IsValid() && DetailsChangedHandle.IsValid())
+	{
+		DetailsView->OnFinishedChangingProperties().Remove(DetailsChangedHandle);
+		DetailsChangedHandle.Reset();
+	}
+
+	DetailsView.Reset();
+	CanvasWidget.Reset();
+	EditingAsset = nullptr;
+
+	FAssetEditorToolkit::OnClose();
+}
+
+void FShapeGraphAssetEditorToolkit::OnAnyObjectPropertyChanged(
+	UObject* ObjectBeingModified,
+	FPropertyChangedEvent& Event)
+{
+	if (!EditingAsset) return;
+	if (ObjectBeingModified != EditingAsset.Get()) return;
+	if (!CanvasWidget.IsValid()) return;
+	if (!Event.Property) return;
+
+	CanvasWidget->HandleAssetPropertyChanged(Event.Property->GetFName());
+}
+
+void FShapeGraphAssetEditorToolkit::OnDetailsFinishedChangingProperties(const FPropertyChangedEvent& Event)
+{
+	if (!EditingAsset) return;
+	if (!CanvasWidget.IsValid()) return;
+
+	if (Event.Property)
+	{
+		CanvasWidget->HandleAssetPropertyChanged(Event.Property->GetFName());
+	}
+	else
+	{
+		// fallback: refresh général
+		CanvasWidget->HandleAssetPropertyChanged(NAME_None);
+	}
 }
 
 FName FShapeGraphAssetEditorToolkit::GetToolkitFName() const
@@ -223,67 +289,203 @@ void FShapeGraphAssetEditorToolkit::BindCommands()
 TSharedRef<SWidget> FShapeGraphAssetEditorToolkit::BuildShortcutsMenuWidget() const
 {
 	const FShapeGraphEditorCommands& Cmds = FShapeGraphEditorCommands::Get();
+	FMenuBuilder MenuBuilder(true, ToolkitCommands);
 
-	auto AddCommandRow = [](FMenuBuilder& MenuBuilder, const TSharedPtr<FUICommandInfo>& Cmd)
+	// ---- Helpers ----
+	auto AddRow = [](FMenuBuilder& MenuBuilder, const FText& Label, const FText& Chord, const FText& Tooltip)
 		{
-			if (!Cmd.IsValid()) return;
-
-			const FText Label = Cmd->GetLabel();
-			const FText Desc = Cmd->GetDescription();
-			const FText Chord = Cmd->GetInputText();
+			const FSlateFontInfo LabelFont = FAppStyle::GetFontStyle("NormalFont");
+			const FSlateFontInfo ChordFont = FAppStyle::GetFontStyle("SmallFont"); // plus discret
 
 			MenuBuilder.AddWidget(
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(0.65f).VAlign(VAlign_Center)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.65f)
+				.VAlign(VAlign_Center)
+				.Padding(FMargin(0.f, 2.f)) // respiration
 				[
-					SNew(STextBlock).Text(Label)
+					SNew(STextBlock)
+						.Text(Label)
+						.Font(LabelFont)
+						.ColorAndOpacity(FSlateColor::UseForeground())
 				]
-				+ SHorizontalBox::Slot().FillWidth(0.35f).HAlign(HAlign_Right).VAlign(VAlign_Center)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.35f)
+				.HAlign(HAlign_Right)
+				.VAlign(VAlign_Center)
+				.Padding(FMargin(0.f, 2.f)) // respiration
 				[
-					SNew(STextBlock).Text(Chord.IsEmpty() ? FText::FromString(TEXT("-")) : Chord)
+					SNew(STextBlock)
+						.Text(Chord.IsEmpty() ? FText::FromString(TEXT("-")) : Chord)
+						.Font(ChordFont)
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 				],
-				Desc
+				Tooltip
 			);
 		};
 
-	FMenuBuilder MenuBuilder(true, ToolkitCommands);
+	auto AddCommandRow = [&AddRow](FMenuBuilder& MenuBuilder, const TSharedPtr<FUICommandInfo>& Cmd)
+		{
+			if (!Cmd.IsValid()) return;
 
-	MenuBuilder.BeginSection("ShapeToolsMouse", NSLOCTEXT("ShapeTools", "MouseHeader", "Mouse"));
+			AddRow(
+				MenuBuilder,
+				Cmd->GetLabel(),
+				Cmd->GetInputText(),
+				Cmd->GetDescription()
+			);
+		};
+	// ------------------------------
+
+	// Navigation
+	MenuBuilder.BeginSection("ShapeToolsNav", NSLOCTEXT("ShapeTools", "NavHeader", "Navigation"));
 	{
-		MenuBuilder.AddWidget(
-			SNew(STextBlock).Text(NSLOCTEXT("ShapeTools", "Mouse_SelectDrag", "LMB on point: Select + Drag")),
-			FText()
+		AddRow(
+			MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Nav_Pan", "Pan view"),
+			NSLOCTEXT("ShapeTools", "Nav_PanChord", "RMB + Drag"),
+			NSLOCTEXT("ShapeTools", "Nav_PanTT", "Pan the view (camera).")
 		);
 
-		MenuBuilder.AddWidget(
-			SNew(STextBlock).Text(NSLOCTEXT("ShapeTools", "Mouse_Insert", "Ctrl + LMB near segment: Insert point")),
-			FText()
+		AddRow(
+			MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Nav_Zoom", "Zoom"),
+			NSLOCTEXT("ShapeTools", "Nav_ZoomChord", "Mouse Wheel"),
+			NSLOCTEXT("ShapeTools", "Nav_ZoomTT", "Zoom in/out centered on cursor.")
 		);
 
-		MenuBuilder.AddWidget(
-			SNew(STextBlock).Text(NSLOCTEXT("ShapeTools", "Mouse_Pan", "MMB Drag: Pan (background view)")),
-			FText()
+		AddCommandRow(MenuBuilder, Cmds.FrameView); // A
+	}
+	MenuBuilder.EndSection();
+
+	MenuBuilder.AddMenuSeparator();
+
+	// Selection
+	MenuBuilder.BeginSection("ShapeToolsSel", NSLOCTEXT("ShapeTools", "SelHeader", "Selection"));
+	{
+		AddRow(
+			MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Sel_ClickVertex", "Select vertex"),
+			NSLOCTEXT("ShapeTools", "Sel_ClickVertexChord", "LMB on vertex"),
+			NSLOCTEXT("ShapeTools", "Sel_ClickVertexTT", "Select a vertex.")
 		);
 
-		MenuBuilder.AddWidget(
-			SNew(STextBlock).Text(NSLOCTEXT("ShapeTools", "Mouse_Zoom", "Mouse Wheel: Zoom (background view)")),
-			FText()
+		AddRow(
+			MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Sel_ToggleVertex", "Toggle vertex in selection"),
+			NSLOCTEXT("ShapeTools", "Sel_ToggleVertexChord", "Shift + LMB"),
+			NSLOCTEXT("ShapeTools", "Sel_ToggleVertexTT", "Add/remove vertex from selection.")
+		);
+
+		AddRow(
+			MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Sel_Clear", "Clear selection"),
+			NSLOCTEXT("ShapeTools", "Sel_ClearChord", "LMB on empty"),
+			NSLOCTEXT("ShapeTools", "Sel_ClearTT", "Clear current selection.")
+		);
+
+		AddRow(
+			MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Sel_Box", "Box select"),
+			NSLOCTEXT("ShapeTools", "Sel_BoxChord", "LMB + Drag"),
+			NSLOCTEXT("ShapeTools", "Sel_BoxTT", "Rectangle selection.")
+		);
+
+		AddRow(
+			MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Sel_BoxAdd", "Additive box select"),
+			NSLOCTEXT("ShapeTools", "Sel_BoxAddChord", "Shift + LMB + Drag"),
+			NSLOCTEXT("ShapeTools", "Sel_BoxAddTT", "Add vertices to current selection.")
+		);
+
+		MenuBuilder.AddMenuSeparator();
+
+		AddRow(
+			MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Sel_Bg", "Select background"),
+			NSLOCTEXT("ShapeTools", "Sel_BgChord", "LMB on background"),
+			NSLOCTEXT("ShapeTools", "Sel_BgTT", "Select background (if unlocked).")
+		);
+
+		AddRow(
+			MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Sel_BgToggle", "Toggle background selection"),
+			NSLOCTEXT("ShapeTools", "Sel_BgToggleChord", "Shift + LMB"),
+			NSLOCTEXT("ShapeTools", "Sel_BgToggleTT", "Toggle background selection.")
 		);
 	}
 	MenuBuilder.EndSection();
 
 	MenuBuilder.AddMenuSeparator();
 
-	MenuBuilder.BeginSection("ShapeToolsShortcuts", NSLOCTEXT("ShapeTools", "ShortcutsHeader", "Keyboard"));
+	// Edition
+	MenuBuilder.BeginSection("ShapeToolsEdit", NSLOCTEXT("ShapeTools", "EditHeader", "Edition"));
 	{
-		AddCommandRow(MenuBuilder, Cmds.FrameView);
-		AddCommandRow(MenuBuilder, Cmds.ToggleBackgroundLock);
-		AddCommandRow(MenuBuilder, Cmds.ResetBackground);
+		AddRow(
+			MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Edit_Insert", "Insert vertex"),
+			NSLOCTEXT("ShapeTools", "Edit_InsertChord", "Ctrl + LMB near segment"),
+			NSLOCTEXT("ShapeTools", "Edit_InsertTT", "Insert a vertex on the nearest segment.")
+		);
+
+		AddCommandRow(MenuBuilder, Cmds.DeleteSelection); // Delete
+		AddCommandRow(MenuBuilder, Cmds.ToggleClosed);    // C
 
 		MenuBuilder.AddMenuSeparator();
 
-		AddCommandRow(MenuBuilder, Cmds.ToggleClosed);
-		AddCommandRow(MenuBuilder, Cmds.DeleteSelection);
+		AddRow(MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Edit_G", "Move (modal)"),
+			NSLOCTEXT("ShapeTools", "Edit_GChord", "G"),
+			NSLOCTEXT("ShapeTools", "Edit_GTT", "Start Move mode (confirm with LMB/Enter, cancel with RMB/Escape).")
+		);
+
+		AddRow(MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Edit_S", "Scale (modal)"),
+			NSLOCTEXT("ShapeTools", "Edit_SChord", "S"),
+			NSLOCTEXT("ShapeTools", "Edit_STT", "Start Scale mode (uniform). Shift = step scale.")
+		);
+
+		AddRow(MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Edit_R", "Rotate (modal)"),
+			NSLOCTEXT("ShapeTools", "Edit_RChord", "R"),
+			NSLOCTEXT("ShapeTools", "Edit_RTT", "Start Rotate mode. Shift = angle snap (5°).")
+		);
+
+		MenuBuilder.AddMenuSeparator();
+
+		AddRow(MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Edit_Confirm", "Confirm modal transform"),
+			NSLOCTEXT("ShapeTools", "Edit_ConfirmChord", "LMB / Enter"),
+			NSLOCTEXT("ShapeTools", "Edit_ConfirmTT", "Confirm current modal transform.")
+		);
+
+		AddRow(MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Edit_Cancel", "Cancel modal transform"),
+			NSLOCTEXT("ShapeTools", "Edit_CancelChord", "RMB / Escape"),
+			NSLOCTEXT("ShapeTools", "Edit_CancelTT", "Cancel current modal transform.")
+		);
+
+		MenuBuilder.AddMenuSeparator();
+
+		AddRow(MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Edit_SnapMove", "Snap (Move)"),
+			NSLOCTEXT("ShapeTools", "Edit_SnapMoveChord", "Ctrl"),
+			NSLOCTEXT("ShapeTools", "Edit_SnapMoveTT", "Snap pivot to active grid while moving.")
+		);
+
+		AddRow(MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Edit_SnapScale", "Step (Scale)"),
+			NSLOCTEXT("ShapeTools", "Edit_SnapScaleChord", "Shift"),
+			NSLOCTEXT("ShapeTools", "Edit_SnapScaleTT", "Discrete step scaling while scaling.")
+		);
+
+		AddRow(MenuBuilder,
+			NSLOCTEXT("ShapeTools", "Edit_SnapRotate", "Angle snap (Rotate)"),
+			NSLOCTEXT("ShapeTools", "Edit_SnapRotateChord", "Shift"),
+			NSLOCTEXT("ShapeTools", "Edit_SnapRotateTT", "Snap rotation angle to 5° steps.")
+		);
 
 		MenuBuilder.AddMenuSeparator();
 
@@ -511,6 +713,119 @@ void FShapeGraphAssetEditorToolkit::ExtendToolbar()
 							})
 					);
 
+					auto GetPivotLabel = [this]() -> FText
+						{
+							if (UShapeGraphAsset* A = EditingAsset.Get())
+							{
+								switch (A->PivotMode)
+								{
+								case EShapePivotMode::MedianPoint:       return FText::FromString(TEXT("Pivot: Median"));
+								case EShapePivotMode::BoundingBoxCenter: return FText::FromString(TEXT("Pivot: BBox"));
+								default: break;
+								}
+							}
+							return FText::FromString(TEXT("Pivot"));
+						};
+
+					auto GetPivotTooltip = []() -> FText
+						{
+							return NSLOCTEXT("ShapeTools", "PivotModeTooltip",
+								"Pivot Mode used for Move/Scale/Rotate transforms.\n"
+								"Median: average of selected vertices.\n"
+								"BBox: center of selection bounds.");
+						};
+
+					auto MakePivotMenu = [this]() -> TSharedRef<SWidget>
+						{
+							FMenuBuilder MenuBuilder(true, nullptr);
+
+							auto SetPivotMode = [this](EShapePivotMode NewMode)
+								{
+									if (UShapeGraphAsset* A = EditingAsset.Get())
+									{
+										const FScopedTransaction Tx(NSLOCTEXT("ShapeTools", "SetPivotModeTx", "Set Pivot Mode"));
+										A->Modify();
+
+										A->PivotMode = NewMode;
+
+										A->PostEditChange();
+										A->MarkPackageDirty();
+
+										if (CanvasWidget.IsValid())
+										{
+											CanvasWidget->Invalidate(EInvalidateWidget::Paint);
+										}
+									}
+								};
+
+							auto IsPivotMode = [this](EShapePivotMode Mode) -> bool
+								{
+									if (UShapeGraphAsset* A = EditingAsset.Get())
+									{
+										return A->PivotMode == Mode;
+									}
+									return false;
+								};
+
+							MenuBuilder.AddMenuEntry(
+								NSLOCTEXT("ShapeTools", "PivotMedian", "Median Point"),
+								NSLOCTEXT("ShapeTools", "PivotMedian_TT", "Pivot = average of selected vertices."),
+								FSlateIcon(),
+								FUIAction(
+									FExecuteAction::CreateLambda([SetPivotMode]() { SetPivotMode(EShapePivotMode::MedianPoint); }),
+									FCanExecuteAction(),
+									FIsActionChecked::CreateLambda([IsPivotMode]() { return IsPivotMode(EShapePivotMode::MedianPoint); })
+								),
+								NAME_None,
+								EUserInterfaceActionType::RadioButton
+							);
+
+							MenuBuilder.AddMenuEntry(
+								NSLOCTEXT("ShapeTools", "PivotBBox", "Bounding Box Center"),
+								NSLOCTEXT("ShapeTools", "PivotBBox_TT", "Pivot = center of the selection bounds."),
+								FSlateIcon(),
+								FUIAction(
+									FExecuteAction::CreateLambda([SetPivotMode]() { SetPivotMode(EShapePivotMode::BoundingBoxCenter); }),
+									FCanExecuteAction(),
+									FIsActionChecked::CreateLambda([IsPivotMode]() { return IsPivotMode(EShapePivotMode::BoundingBoxCenter); })
+								),
+								NAME_None,
+								EUserInterfaceActionType::RadioButton
+							);
+
+							return MenuBuilder.MakeWidget();
+						};
+
+					ToolbarBuilder.AddWidget(
+						SNew(SComboButton)
+						.ComboButtonStyle(FAppStyle::Get(), "SimpleComboButton")
+						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						.ContentPadding(FMargin(6, 2))
+						.ToolTipText_Lambda(GetPivotTooltip)
+						.OnGetMenuContent_Lambda(MakePivotMenu)
+						.ButtonContent()
+						[
+							SNew(SHorizontalBox)
+
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								[
+									SNew(SImage)
+										.Image(FShapeToolsEditorStyle::Get().GetBrush("ShapeTools.Icons.Pivot"))
+								]
+
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								.Padding(6, 0, 0, 0)
+								[
+									SNew(STextBlock)
+										.Text_Lambda(GetPivotLabel)
+								]
+						]
+					);
+
 					ToolbarBuilder.AddSeparator();
 
 					ToolbarBuilder.AddWidget(
@@ -611,7 +926,6 @@ void FShapeGraphAssetEditorToolkit::Command_ToggleBgLock()
 	{
 		if (CanvasWidget.IsValid())
 		{
-			CanvasWidget->ClearBackgroundSelection();
 			CanvasWidget->Invalidate(EInvalidateWidget::Paint);
 		}
 	}

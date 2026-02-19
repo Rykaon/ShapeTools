@@ -1,11 +1,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "IDetailsView.h"
+#include "Delegates/Delegate.h"
 #include "Toolkits/AssetEditorToolkit.h"
 #include "UObject/GCObject.h"
 
 class UShapeGraphAsset;
-class IDetailsView;
 class SShapeGraphEditorCanvas;
 
 class SHAPETOOLSEDITOR_API FShapeGraphAssetEditorToolkit
@@ -14,6 +15,7 @@ class SHAPETOOLSEDITOR_API FShapeGraphAssetEditorToolkit
 {
 public:
 	static void OpenEditor(const TArray<UObject*>& InObjects);
+	virtual void OnClose() override;
 
 	// FAssetEditorToolkit
 	virtual FName GetToolkitFName() const override;
@@ -28,8 +30,12 @@ public:
 	virtual void RegisterTabSpawners(const TSharedRef<FTabManager>& InTabManager) override;
 	virtual void UnregisterTabSpawners(const TSharedRef<FTabManager>& InTabManager) override;
 
+	void OnAnyObjectPropertyChanged(UObject* ObjectBeingModified, FPropertyChangedEvent& Event);
+	FDelegateHandle PropertyChangedHandle;
+
 private:
 	void InitEditor(UShapeGraphAsset* InAsset);
+	void OnDetailsFinishedChangingProperties(const FPropertyChangedEvent& Event);
 
 	TSharedRef<SDockTab> SpawnTab_Canvas(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnTab_Details(const FSpawnTabArgs& Args);
@@ -53,6 +59,7 @@ private:
 private:
 	TObjectPtr<UShapeGraphAsset> EditingAsset = nullptr;
 	TSharedPtr<IDetailsView> DetailsView;
+	FDelegateHandle DetailsChangedHandle;
 
 	TSharedPtr<FUICommandList> ToolkitCommands;
 	TSharedPtr<SShapeGraphEditorCanvas> CanvasWidget;
